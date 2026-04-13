@@ -356,6 +356,8 @@ private fun LevelFilterChip(
             selectedContainerColor = backgroundColor
         ),
         border = FilterChipDefaults.filterChipBorder(
+            enabled = true,
+            selected = isSelected,
             borderColor = if (isSelected) color else DividerColor,
             selectedBorderColor = color,
             borderWidth = 1.dp,

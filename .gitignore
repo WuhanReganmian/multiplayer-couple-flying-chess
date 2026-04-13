@@ -18,6 +18,10 @@ captures/
 *.log
 *.ctxt
 .mtj.tmp/
+.kotlin/
+
+# Temp
+ci-logs.txt
 
 # Rust
 gamelogic/target/
