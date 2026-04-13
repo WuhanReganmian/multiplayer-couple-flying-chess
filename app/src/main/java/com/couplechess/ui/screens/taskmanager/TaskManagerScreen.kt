@@ -78,8 +78,10 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.couplechess.data.model.Task
 import com.couplechess.data.model.TaskLevel
+import com.couplechess.data.repository.TaskRepository
 import com.couplechess.ui.theme.BackgroundCard
 import com.couplechess.ui.theme.BackgroundElevated
 import com.couplechess.ui.theme.BackgroundPrimary
@@ -97,9 +99,12 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TaskManagerScreen(
-    viewModel: TaskManagerViewModel,
+    taskRepository: TaskRepository,
     onNavigateBack: () -> Unit
 ) {
+    val viewModel: TaskManagerViewModel = viewModel(
+        factory = TaskManagerViewModel.Factory(taskRepository)
+    )
     val uiState by viewModel.uiState.collectAsState()
     val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
@@ -351,10 +356,10 @@ private fun LevelFilterChip(
             selectedContainerColor = backgroundColor
         ),
         border = FilterChipDefaults.filterChipBorder(
-            enabled = true,
-            selected = isSelected,
             borderColor = if (isSelected) color else DividerColor,
-            selectedBorderColor = color
+            selectedBorderColor = color,
+            borderWidth = 1.dp,
+            selectedBorderWidth = 1.dp
         )
     )
 }
