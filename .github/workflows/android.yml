@@ -6,13 +6,37 @@ on:
   pull_request:
     branches: [ main, master ]
 
+# Auto-increment version: reads latest release tag to compute next version
+env:
+  VERSION_PREFIX: "0.0"
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # Required for creating releases
 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0   # Full history for tag detection
+
+    - name: Compute version
+      id: version
+      run: |
+        # Find latest v0.0.x tag, default to 0 if none
+        LATEST=$(git tag -l 'v0.0.*' --sort=-v:refname | head -n1)
+        if [ -z "$LATEST" ]; then
+          NEXT_PATCH=1
+        else
+          CURRENT_PATCH=$(echo "$LATEST" | sed 's/v0\.0\.//')
+          NEXT_PATCH=$((CURRENT_PATCH + 1))
+        fi
+        VERSION="0.0.${NEXT_PATCH}"
+        echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+        echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+        echo "📦 Next version: v${VERSION}"
 
     - name: Set up JDK 17
       uses: actions/setup-java@v4
@@ -31,7 +55,7 @@ jobs:
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@stable
       with:
-        targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+        targets: aarch64-linux-android
 
     - name: Install cargo-ndk
       run: cargo install cargo-ndk
@@ -63,34 +87,53 @@ jobs:
       working-directory: gamelogic
       run: cargo test --verbose
 
-    - name: Build Rust .so libraries for Android
+    - name: Build Rust .so libraries for Android (arm64-v8a)
       working-directory: gamelogic
       run: |
-        # Create jniLibs directories
         mkdir -p ../app/src/main/jniLibs/arm64-v8a
-        mkdir -p ../app/src/main/jniLibs/armeabi-v7a
-        mkdir -p ../app/src/main/jniLibs/x86_64
-        
-        # Build for each architecture (run from gamelogic directory)
-        cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 \
+        cargo ndk -t arm64-v8a \
           -o ../app/src/main/jniLibs \
           build --release
 
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
-    - name: Build with Gradle
+    - name: Build debug APK
       run: ./gradlew assembleDebug --stacktrace
 
     - name: Run Kotlin unit tests
       run: ./gradlew test --stacktrace
 
+    - name: Rename APK with version
+      run: |
+        VERSION="${{ steps.version.outputs.version }}"
+        cp app/build/outputs/apk/debug/app-debug.apk \
+           app/build/outputs/apk/debug/couple-chess-v${VERSION}-arm64-v8a-debug.apk
+
     - name: Upload APK artifact
       uses: actions/upload-artifact@v4
       with:
-        name: app-debug
-        path: app/build/outputs/apk/debug/app-debug.apk
+        name: couple-chess-v${{ steps.version.outputs.version }}-arm64-v8a-debug
+        path: app/build/outputs/apk/debug/couple-chess-v${{ steps.version.outputs.version }}-arm64-v8a-debug.apk
         if-no-files-found: error
+
+    - name: Create GitHub Release
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ steps.version.outputs.tag }}
+        name: "v${{ steps.version.outputs.version }}"
+        body: |
+          ## Couple Chess v${{ steps.version.outputs.version }}
+
+          **Architecture:** arm64-v8a (64-bit ARM)
+          **Build type:** Debug
+
+          ### Installation
+          Download the APK file below and install it on your Android device (Android 5.0+).
+        files: app/build/outputs/apk/debug/couple-chess-v${{ steps.version.outputs.version }}-arm64-v8a-debug.apk
+        draft: false
+        prerelease: false
 
     - name: Upload test results
       if: always()
