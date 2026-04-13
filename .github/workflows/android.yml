@@ -64,16 +64,17 @@ jobs:
       run: cargo test --verbose
 
     - name: Build Rust .so libraries for Android
+      working-directory: gamelogic
       run: |
         # Create jniLibs directories
-        mkdir -p app/src/main/jniLibs/arm64-v8a
-        mkdir -p app/src/main/jniLibs/armeabi-v7a
-        mkdir -p app/src/main/jniLibs/x86_64
+        mkdir -p ../app/src/main/jniLibs/arm64-v8a
+        mkdir -p ../app/src/main/jniLibs/armeabi-v7a
+        mkdir -p ../app/src/main/jniLibs/x86_64
         
-        # Build for each architecture
+        # Build for each architecture (run from gamelogic directory)
         cargo ndk -t arm64-v8a -t armeabi-v7a -t x86_64 \
-          -o app/src/main/jniLibs \
-          build --manifest-path gamelogic/Cargo.toml --release
+          -o ../app/src/main/jniLibs \
+          build --release
 
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
