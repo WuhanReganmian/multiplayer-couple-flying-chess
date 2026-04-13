@@ -5,10 +5,12 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -20,6 +22,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -28,6 +31,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -64,23 +68,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.drawText
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.couplechess.data.GameSaveManager
 import com.couplechess.data.model.BoardCell
 import com.couplechess.data.model.CellType
 import com.couplechess.data.model.Gender
@@ -100,37 +101,37 @@ import com.couplechess.ui.theme.NormalCellColor
 import com.couplechess.ui.theme.PureBlack
 import com.couplechess.ui.theme.SoftWhite
 import com.couplechess.ui.theme.StartCellColor
-import com.couplechess.ui.theme.TaskCellColor
 import com.couplechess.ui.theme.TextSecondary
 import kotlinx.coroutines.delay
-import kotlin.math.abs
+import kotlin.math.roundToInt
 
-/**
- * Main game screen with rectangular spiral board.
- * 
- * Layout based on demo.jpeg:
- * - Rectangular spiral path around the edge
- * - 36 cells total (configurable)
- * - Center area for game rules / current status
- * - Dice and controls at bottom
- */
+// ============================================================
+// Main Game Screen
+// ============================================================
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GameScreen(
     players: List<Player> = emptyList(),
     tasks: Map<TaskLevel, List<Task>> = emptyMap(),
+    gameSaveManager: GameSaveManager? = null,
     onGameFinished: () -> Unit
 ) {
     val viewModel: GameViewModel = viewModel()
     val uiState by viewModel.uiState.collectAsState()
-    
+
+    // Inject save manager once
+    LaunchedEffect(gameSaveManager) {
+        viewModel.setSaveManager(gameSaveManager)
+    }
+
     // Initialize game when screen launches
     LaunchedEffect(players) {
         if (players.isNotEmpty()) {
             viewModel.initializeGame(players, tasks)
         }
     }
-    
+
     // Background gradient based on highest player level
     val maxLevel = players.maxOfOrNull { it.currentLevel.levelInt } ?: 1
     val backgroundBrush = remember(maxLevel) {
@@ -142,7 +143,7 @@ fun GameScreen(
             )
         )
     }
-    
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -153,7 +154,10 @@ fun GameScreen(
                     )
                 },
                 navigationIcon = {
-                    IconButton(onClick = onGameFinished) {
+                    IconButton(onClick = {
+                        viewModel.onExitGame()
+                        onGameFinished()
+                    }) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "退出游戏"
@@ -161,7 +165,6 @@ fun GameScreen(
                     }
                 },
                 actions = {
-                    // Turn indicator
                     viewModel.getCurrentPlayer()?.let { player ->
                         PlayerChip(
                             player = player,
@@ -197,6 +200,7 @@ fun GameScreen(
                 uiState.gameState != null -> {
                     GameContent(
                         uiState = uiState,
+                        viewModel = viewModel,
                         onRollDice = viewModel::rollDice,
                         onAcceptTask = viewModel::acceptTask,
                         onRejectTask = viewModel::rejectTask,
@@ -204,26 +208,34 @@ fun GameScreen(
                     )
                 }
             }
-            
-            // Task card overlay
+
+            // Task card overlay — fade only, no flip
             AnimatedVisibility(
                 visible = uiState.taskCardState != TaskCardState.Hidden && uiState.currentTask != null,
-                enter = fadeIn() + scaleIn(initialScale = 0.8f),
-                exit = fadeOut() + scaleOut(targetScale = 0.8f),
+                enter = fadeIn(animationSpec = tween(300)) + scaleIn(initialScale = 0.9f, animationSpec = tween(300)),
+                exit = fadeOut(animationSpec = tween(250)) + scaleOut(targetScale = 0.9f, animationSpec = tween(250)),
                 modifier = Modifier.fillMaxSize()
             ) {
                 uiState.currentTask?.let { taskInfo ->
                     TaskCardOverlay(
                         taskInfo = taskInfo,
-                        cardState = uiState.taskCardState,
                         onAccept = viewModel::acceptTask,
                         onReject = viewModel::rejectTask
                     )
                 }
             }
-            
+
+            // Cell preview overlay
+            uiState.previewTask?.let { task ->
+                CellPreviewOverlay(
+                    task = task,
+                    onDismiss = viewModel::dismissCellPreview
+                )
+            }
+
             // Game over overlay
             if (viewModel.isGameOver()) {
+                viewModel.onGameOver()
                 GameOverOverlay(
                     winner = viewModel.getWinner(),
                     onDismiss = onGameFinished
@@ -236,13 +248,14 @@ fun GameScreen(
 @Composable
 private fun GameContent(
     uiState: GameUiState,
+    viewModel: GameViewModel,
     onRollDice: () -> Unit,
     onAcceptTask: () -> Unit,
     onRejectTask: () -> Unit,
     getPlayer: (Int) -> Player?
 ) {
     val gameState = uiState.gameState ?: return
-    
+
     Column(
         modifier = Modifier.fillMaxSize(),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -255,25 +268,27 @@ private fun GameContent(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 8.dp)
         )
-        
-        // Game board
+
+        // Game board — spiral to center
         Box(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
-                .padding(8.dp),
+                .padding(4.dp),
             contentAlignment = Alignment.Center
         ) {
             SpiralBoard(
                 board = gameState.board,
                 players = gameState.players,
                 movingPiece = uiState.movingPiece,
+                currentPlayerIndex = gameState.currentPlayerIndex,
+                viewModel = viewModel,
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(1f)
             )
         }
-        
+
         // Bottom controls
         BottomGameControls(
             diceAnimation = uiState.diceAnimation,
@@ -288,253 +303,293 @@ private fun GameContent(
     }
 }
 
+// ============================================================
+// Spiral Board — Box-based layout, clickable cells, no lines
+// ============================================================
+
 /**
- * Rectangular spiral board rendered with Canvas.
- * Path follows the outer edge, spiraling inward.
+ * Data class for a cell's position on the grid.
  */
+private data class SpiralCellPos(
+    val row: Int,
+    val col: Int
+)
+
+/**
+ * Generate a clockwise rectangular spiral that converges to the center.
+ * Returns list of (row, col) in traversal order. Index 0 = Start, last = Finish (center).
+ */
+private fun generateSpiralPath(totalCells: Int): List<SpiralCellPos> {
+    // Choose grid dimensions large enough for the spiral
+    // For 36 cells, a 7×7 grid works well (outer ring=24, next ring=16, …)
+    // We need: perimeter of rings until we have enough cells
+    val gridSize = when {
+        totalCells <= 8 -> 3
+        totalCells <= 24 -> 5
+        totalCells <= 48 -> 7
+        totalCells <= 80 -> 9
+        else -> 11
+    }
+
+    val path = mutableListOf<SpiralCellPos>()
+    var top = 0; var bottom = gridSize - 1; var left = 0; var right = gridSize - 1
+
+    while (path.size < totalCells && top <= bottom && left <= right) {
+        // Top row: left → right
+        for (col in left..right) {
+            if (path.size >= totalCells) break
+            path.add(SpiralCellPos(top, col))
+        }
+        top++
+
+        // Right column: top → bottom
+        for (row in top..bottom) {
+            if (path.size >= totalCells) break
+            path.add(SpiralCellPos(row, right))
+        }
+        right--
+
+        // Bottom row: right → left
+        if (top <= bottom) {
+            for (col in right downTo left) {
+                if (path.size >= totalCells) break
+                path.add(SpiralCellPos(bottom, col))
+            }
+            bottom--
+        }
+
+        // Left column: bottom → top
+        if (left <= right) {
+            for (row in bottom downTo top) {
+                if (path.size >= totalCells) break
+                path.add(SpiralCellPos(row, left))
+            }
+            left++
+        }
+    }
+
+    return path
+}
+
 @Composable
 private fun SpiralBoard(
     board: List<BoardCell>,
     players: List<Player>,
     movingPiece: MovingPieceState?,
+    currentPlayerIndex: Int,
+    viewModel: GameViewModel,
     modifier: Modifier = Modifier
 ) {
-    val textMeasurer = rememberTextMeasurer()
-    
-    Canvas(modifier = modifier) {
-        val cellCount = board.size
-        val padding = 8.dp.toPx()
-        val boardWidth = size.width - padding * 2
-        val boardHeight = size.height - padding * 2
-        
-        // Calculate cell positions for rectangular spiral
-        val cellPositions = calculateSpiralPositions(cellCount, boardWidth, boardHeight, padding)
-        
+    val cellCount = board.size
+    val spiralPath = remember(cellCount) { generateSpiralPath(cellCount) }
+    val gridSize = when {
+        cellCount <= 8 -> 3
+        cellCount <= 24 -> 5
+        cellCount <= 48 -> 7
+        cellCount <= 80 -> 9
+        else -> 11
+    }
+
+    // Current turn flash animation
+    val flashTransition = rememberInfiniteTransition(label = "turnFlash")
+    val flashAlpha by flashTransition.animateFloat(
+        initialValue = 0.4f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(600, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "flashAlpha"
+    )
+
+    BoxWithConstraints(modifier = modifier) {
+        val density = LocalDensity.current
+        val boardSizePx = with(density) { maxWidth.toPx() }
+        val cellSizeDp = maxWidth / gridSize
+        val cellSizePx = with(density) { cellSizeDp.toPx() }
+        val gap = 2.dp
+
         // Draw cells
-        board.forEachIndexed { index, cell ->
-            val pos = cellPositions.getOrNull(index) ?: return@forEachIndexed
-            drawBoardCell(
+        spiralPath.forEachIndexed { index, pos ->
+            if (index >= board.size) return@forEachIndexed
+            val cell = board[index]
+            val task = viewModel.getTaskForCell(cell.index)
+
+            // Check if current player is on this cell
+            val currentPlayer = players.getOrNull(currentPlayerIndex)
+            val isCurrentPlayerCell = currentPlayer != null && currentPlayer.position == index
+
+            BoardCellBox(
                 cell = cell,
-                position = pos.first,
-                size = pos.second,
-                textMeasurer = textMeasurer
+                task = task,
+                cellSize = cellSizeDp - gap * 2,
+                isCurrentPlayerCell = isCurrentPlayerCell,
+                flashAlpha = flashAlpha,
+                modifier = Modifier.offset(
+                    x = cellSizeDp * pos.col + gap,
+                    y = cellSizeDp * pos.row + gap
+                ),
+                onClick = { viewModel.showCellPreview(cell.index) }
             )
         }
-        
-        // Draw path connections
-        for (i in 0 until cellCount - 1) {
-            val pos1 = cellPositions.getOrNull(i) ?: continue
-            val pos2 = cellPositions.getOrNull(i + 1) ?: continue
-            val center1 = Offset(
-                pos1.first.x + pos1.second.width / 2,
-                pos1.first.y + pos1.second.height / 2
-            )
-            val center2 = Offset(
-                pos2.first.x + pos2.second.width / 2,
-                pos2.first.y + pos2.second.height / 2
-            )
-            drawLine(
-                color = DividerColor,
-                start = center1,
-                end = center2,
-                strokeWidth = 2.dp.toPx()
-            )
-        }
-        
+
         // Draw player pieces
         players.forEach { player ->
-            val position = if (movingPiece != null && movingPiece.playerId == player.id) {
-                // Interpolate position during animation
-                val fromPos = cellPositions.getOrNull(movingPiece.fromPosition)
-                val toPos = cellPositions.getOrNull(movingPiece.toPosition)
-                if (fromPos != null && toPos != null) {
-                    val fromCenter = Offset(
-                        fromPos.first.x + fromPos.second.width / 2,
-                        fromPos.first.y + fromPos.second.height / 2
-                    )
-                    val toCenter = Offset(
-                        toPos.first.x + toPos.second.width / 2,
-                        toPos.first.y + toPos.second.height / 2
-                    )
-                    Offset(
-                        fromCenter.x + (toCenter.x - fromCenter.x) * movingPiece.progress,
-                        fromCenter.y + (toCenter.y - fromCenter.y) * movingPiece.progress
-                    )
-                } else {
-                    cellPositions.getOrNull(player.position)?.let {
-                        Offset(it.first.x + it.second.width / 2, it.first.y + it.second.height / 2)
-                    }
-                }
+            val targetIndex = player.position.coerceIn(0, spiralPath.size - 1)
+
+            // Compute position (handle animation)
+            val offsetX: Float
+            val offsetY: Float
+
+            if (movingPiece != null && movingPiece.playerId == player.id) {
+                val fromIdx = movingPiece.fromPosition.coerceIn(0, spiralPath.size - 1)
+                val toIdx = movingPiece.toPosition.coerceIn(0, spiralPath.size - 1)
+                val fromPos = spiralPath[fromIdx]
+                val toPos = spiralPath[toIdx]
+                val fromX = fromPos.col * cellSizePx + cellSizePx / 2
+                val fromY = fromPos.row * cellSizePx + cellSizePx / 2
+                val toX = toPos.col * cellSizePx + cellSizePx / 2
+                val toY = toPos.row * cellSizePx + cellSizePx / 2
+                offsetX = fromX + (toX - fromX) * movingPiece.progress
+                offsetY = fromY + (toY - fromY) * movingPiece.progress
             } else {
-                cellPositions.getOrNull(player.position)?.let {
-                    Offset(it.first.x + it.second.width / 2, it.first.y + it.second.height / 2)
-                }
+                val pos = spiralPath[targetIndex]
+                offsetX = pos.col * cellSizePx + cellSizePx / 2
+                offsetY = pos.row * cellSizePx + cellSizePx / 2
             }
-            
-            position?.let { pos ->
-                drawPlayerPiece(
-                    position = pos,
-                    player = player,
-                    pieceRadius = 12.dp.toPx()
+
+            val pieceSize = 20.dp
+            val pieceSizePx = with(density) { pieceSize.toPx() }
+            val playerIndex = players.indexOf(player)
+            // Slight offset per player so overlapping pieces fan out
+            val fanOffset = (playerIndex - players.size / 2f) * pieceSizePx * 0.4f
+
+            PlayerPieceComposable(
+                player = player,
+                size = pieceSize,
+                modifier = Modifier.offset {
+                    IntOffset(
+                        (offsetX - pieceSizePx / 2 + fanOffset).roundToInt(),
+                        (offsetY - pieceSizePx / 2).roundToInt()
+                    )
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun BoardCellBox(
+    cell: BoardCell,
+    task: Task?,
+    cellSize: Dp,
+    isCurrentPlayerCell: Boolean,
+    flashAlpha: Float,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val bgColor = when (cell.cellType) {
+        CellType.START -> StartCellColor
+        CellType.FINISH -> FinishCellColor
+        CellType.TASK -> {
+            // Color based on task level if available
+            if (task != null) {
+                LevelColors.getOrElse(task.level.levelInt - 1) { Gold }
+            } else {
+                Gold
+            }
+        }
+        CellType.NORMAL -> NormalCellColor
+    }
+
+    val borderColor = if (isCurrentPlayerCell) {
+        Gold.copy(alpha = flashAlpha)
+    } else {
+        SoftWhite.copy(alpha = 0.2f)
+    }
+
+    val borderWidth = if (isCurrentPlayerCell) 2.dp else 1.dp
+
+    Box(
+        modifier = modifier
+            .size(cellSize)
+            .clip(RoundedCornerShape(6.dp))
+            .background(bgColor)
+            .border(borderWidth, borderColor, RoundedCornerShape(6.dp))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            // Cell label
+            Text(
+                text = when (cell.cellType) {
+                    CellType.START -> "起"
+                    CellType.FINISH -> "终"
+                    else -> "${cell.index + 1}"
+                },
+                fontSize = 8.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (cell.cellType == CellType.TASK && task != null) {
+                    SoftWhite
+                } else if (cell.cellType == CellType.START || cell.cellType == CellType.FINISH) {
+                    PureBlack
+                } else {
+                    SoftWhite
+                },
+                maxLines = 1
+            )
+            // Show task level abbreviation
+            if (task != null) {
+                Text(
+                    text = task.level.name,
+                    fontSize = 6.sp,
+                    color = SoftWhite.copy(alpha = 0.7f),
+                    maxLines = 1
                 )
             }
         }
     }
 }
 
-/**
- * Calculate positions for rectangular spiral layout.
- */
-private fun calculateSpiralPositions(
-    cellCount: Int,
-    boardWidth: Float,
-    boardHeight: Float,
-    padding: Float
-): List<Pair<Offset, Size>> {
-    val positions = mutableListOf<Pair<Offset, Size>>()
-    
-    // Calculate cells per side (approximate)
-    // For 36 cells: 10-8-10-8 pattern (top, right, bottom, left)
-    val perimeter = cellCount
-    val aspectRatio = boardWidth / boardHeight
-    
-    // Distribute cells based on aspect ratio
-    val horizontalCells = (perimeter * aspectRatio / (2 * (1 + aspectRatio))).toInt().coerceIn(6, 14)
-    val verticalCells = ((perimeter - 2 * horizontalCells) / 2).coerceIn(4, 10)
-    
-    val cellWidth = (boardWidth - padding * 2) / horizontalCells
-    val cellHeight = (boardHeight - padding * 2) / verticalCells
-    val cellSize = Size(cellWidth * 0.9f, cellHeight * 0.9f)
-    
-    var index = 0
-    
-    // Top row (left to right)
-    for (i in 0 until horizontalCells) {
-        if (index >= cellCount) break
-        positions.add(
-            Offset(
-                padding + i * cellWidth + cellWidth * 0.05f,
-                padding
-            ) to cellSize
-        )
-        index++
-    }
-    
-    // Right column (top to bottom)
-    for (i in 1 until verticalCells) {
-        if (index >= cellCount) break
-        positions.add(
-            Offset(
-                padding + (horizontalCells - 1) * cellWidth + cellWidth * 0.05f,
-                padding + i * cellHeight
-            ) to cellSize
-        )
-        index++
-    }
-    
-    // Bottom row (right to left)
-    for (i in (horizontalCells - 2) downTo 0) {
-        if (index >= cellCount) break
-        positions.add(
-            Offset(
-                padding + i * cellWidth + cellWidth * 0.05f,
-                padding + (verticalCells - 1) * cellHeight
-            ) to cellSize
-        )
-        index++
-    }
-    
-    // Left column (bottom to top)
-    for (i in (verticalCells - 2) downTo 1) {
-        if (index >= cellCount) break
-        positions.add(
-            Offset(
-                padding,
-                padding + i * cellHeight
-            ) to cellSize
-        )
-        index++
-    }
-    
-    return positions
-}
-
-private fun DrawScope.drawBoardCell(
-    cell: BoardCell,
-    position: Offset,
-    size: Size,
-    textMeasurer: androidx.compose.ui.text.TextMeasurer
-) {
-    val color = when (cell.cellType) {
-        CellType.START -> StartCellColor
-        CellType.FINISH -> FinishCellColor
-        CellType.TASK -> TaskCellColor
-        CellType.NORMAL -> NormalCellColor
-    }
-    
-    // Draw cell background
-    drawRoundRect(
-        color = color,
-        topLeft = position,
-        size = size,
-        cornerRadius = CornerRadius(8.dp.toPx())
-    )
-    
-    // Draw cell border
-    drawRoundRect(
-        color = SoftWhite.copy(alpha = 0.3f),
-        topLeft = position,
-        size = size,
-        cornerRadius = CornerRadius(8.dp.toPx()),
-        style = Stroke(width = 1.dp.toPx())
-    )
-    
-    // Draw cell index
-    val indexText = "${cell.index + 1}"
-    val textStyle = TextStyle(
-        color = if (cell.cellType == CellType.TASK) PureBlack else SoftWhite,
-        fontSize = 10.sp,
-        fontWeight = FontWeight.Bold
-    )
-    val textLayoutResult = textMeasurer.measure(indexText, textStyle)
-    drawText(
-        textLayoutResult = textLayoutResult,
-        topLeft = Offset(
-            position.x + (size.width - textLayoutResult.size.width) / 2,
-            position.y + (size.height - textLayoutResult.size.height) / 2
-        )
-    )
-}
-
-private fun DrawScope.drawPlayerPiece(
-    position: Offset,
+@Composable
+private fun PlayerPieceComposable(
     player: Player,
-    pieceRadius: Float
+    size: Dp,
+    modifier: Modifier = Modifier
 ) {
     val color = if (player.gender == Gender.MALE) MaleColor else FemaleColor
-    
-    // Draw shadow
-    drawCircle(
-        color = Color.Black.copy(alpha = 0.3f),
-        radius = pieceRadius,
-        center = position + Offset(2.dp.toPx(), 2.dp.toPx())
-    )
-    
-    // Draw piece
-    drawCircle(
-        color = color,
-        radius = pieceRadius,
-        center = position
-    )
-    
-    // Draw border
-    drawCircle(
-        color = SoftWhite,
-        radius = pieceRadius,
-        center = position,
-        style = Stroke(width = 2.dp.toPx())
-    )
+
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(Color.Black.copy(alpha = 0.4f))
+    ) {
+        Box(
+            modifier = Modifier
+                .size(size - 2.dp)
+                .align(Alignment.Center)
+                .clip(CircleShape)
+                .background(color)
+                .border(1.5f.dp, SoftWhite, CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = player.name.firstOrNull()?.uppercase() ?: "?",
+                fontSize = 8.sp,
+                fontWeight = FontWeight.Bold,
+                color = SoftWhite
+            )
+        }
+    }
 }
+
+// ============================================================
+// Players Status Bar
+// ============================================================
 
 @Composable
 private fun PlayersStatusBar(
@@ -573,7 +628,7 @@ private fun PlayerChip(
         ),
         label = "scale"
     )
-    
+
     Card(
         modifier = modifier
             .scale(scale),
@@ -586,7 +641,6 @@ private fun PlayerChip(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Avatar circle
             Box(
                 modifier = Modifier
                     .size(24.dp)
@@ -601,9 +655,9 @@ private fun PlayerChip(
                     fontWeight = FontWeight.Bold
                 )
             }
-            
+
             Spacer(modifier = Modifier.width(8.dp))
-            
+
             Column {
                 Text(
                     text = player.name,
@@ -620,6 +674,10 @@ private fun PlayerChip(
         }
     }
 }
+
+// ============================================================
+// Bottom Controls with spring dice
+// ============================================================
 
 @Composable
 private fun BottomGameControls(
@@ -641,13 +699,12 @@ private fun BottomGameControls(
                 .padding(20.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Turn info
             Text(
                 text = "第 $turnCount 回合",
                 style = MaterialTheme.typography.labelMedium,
                 color = TextSecondary
             )
-            
+
             if (currentPlayer != null) {
                 Text(
                     text = "${currentPlayer.name} 的回合",
@@ -656,18 +713,17 @@ private fun BottomGameControls(
                     fontWeight = FontWeight.Bold
                 )
             }
-            
+
             Spacer(modifier = Modifier.height(16.dp))
-            
-            // Dice display
+
+            // Dice with spring animation
             DiceDisplay(
                 diceAnimation = diceAnimation,
                 modifier = Modifier.size(80.dp)
             )
-            
+
             Spacer(modifier = Modifier.height(16.dp))
-            
-            // Roll button
+
             Button(
                 onClick = onRollDice,
                 enabled = canRoll && diceAnimation is DiceAnimationState.Idle,
@@ -692,31 +748,64 @@ private fun BottomGameControls(
     }
 }
 
+// ============================================================
+// Dice with spring bounce + 3D rotation
+// ============================================================
+
 @Composable
 private fun DiceDisplay(
     diceAnimation: DiceAnimationState,
     modifier: Modifier = Modifier
 ) {
-    val rotation by animateFloatAsState(
+    // Spring-based scale bounce when dice stops
+    val springScale by animateFloatAsState(
+        targetValue = when (diceAnimation) {
+            is DiceAnimationState.Stopped -> 1f
+            is DiceAnimationState.Rolling -> 0.85f
+            else -> 1f
+        },
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "springScale"
+    )
+
+    // 3D rotation during roll
+    val rotationX by animateFloatAsState(
         targetValue = if (diceAnimation is DiceAnimationState.Rolling) 360f else 0f,
         animationSpec = if (diceAnimation is DiceAnimationState.Rolling) {
             tween(200, easing = LinearEasing)
         } else {
-            tween(0)
+            spring(dampingRatio = Spring.DampingRatioLowBouncy)
         },
-        label = "rotation"
+        label = "rotationX"
     )
-    
+
+    val rotationZ by animateFloatAsState(
+        targetValue = if (diceAnimation is DiceAnimationState.Rolling) 180f else 0f,
+        animationSpec = if (diceAnimation is DiceAnimationState.Rolling) {
+            tween(300, easing = LinearEasing)
+        } else {
+            spring(dampingRatio = Spring.DampingRatioLowBouncy)
+        },
+        label = "rotationZ"
+    )
+
     val currentValue = when (diceAnimation) {
         is DiceAnimationState.Idle -> 1
         is DiceAnimationState.Rolling -> diceAnimation.currentFace
         is DiceAnimationState.Stopped -> diceAnimation.value
     }
-    
+
     Box(
         modifier = modifier
             .graphicsLayer {
-                rotationZ = if (diceAnimation is DiceAnimationState.Rolling) rotation else 0f
+                scaleX = springScale
+                scaleY = springScale
+                this.rotationX = if (diceAnimation is DiceAnimationState.Rolling) rotationX else 0f
+                this.rotationZ = if (diceAnimation is DiceAnimationState.Rolling) rotationZ else 0f
+                cameraDistance = 16f * density
             }
             .background(
                 color = SoftWhite,
@@ -729,18 +818,19 @@ private fun DiceDisplay(
             ),
         contentAlignment = Alignment.Center
     ) {
-        // Draw dice dots based on value
         DiceDots(value = currentValue)
     }
 }
 
 @Composable
 private fun DiceDots(value: Int) {
-    Canvas(modifier = Modifier.fillMaxSize().padding(8.dp)) {
+    Canvas(modifier = Modifier
+        .fillMaxSize()
+        .padding(8.dp)) {
         val dotRadius = size.minDimension / 10
         val center = Offset(size.width / 2, size.height / 2)
         val offset = size.minDimension / 3.5f
-        
+
         val positions = when (value) {
             1 -> listOf(center)
             2 -> listOf(
@@ -775,7 +865,7 @@ private fun DiceDots(value: Int) {
             )
             else -> listOf(center)
         }
-        
+
         positions.forEach { pos ->
             drawCircle(
                 color = Color.Black,
@@ -786,24 +876,16 @@ private fun DiceDots(value: Int) {
     }
 }
 
+// ============================================================
+// Task Card Overlay — FADE ONLY, no flip
+// ============================================================
+
 @Composable
 private fun TaskCardOverlay(
     taskInfo: TaskDisplayInfo,
-    cardState: TaskCardState,
     onAccept: () -> Unit,
     onReject: () -> Unit
 ) {
-    val rotation by animateFloatAsState(
-        targetValue = when (cardState) {
-            TaskCardState.Hidden -> 180f
-            TaskCardState.FlippingIn -> 0f
-            TaskCardState.Visible -> 0f
-            TaskCardState.FlippingOut -> 180f
-        },
-        animationSpec = tween(300),
-        label = "cardRotation"
-    )
-    
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -812,16 +894,9 @@ private fun TaskCardOverlay(
         contentAlignment = Alignment.Center
     ) {
         Card(
-            modifier = Modifier
-                .fillMaxWidth(0.85f)
-                .graphicsLayer {
-                    rotationY = rotation
-                    cameraDistance = 12f * density
-                },
+            modifier = Modifier.fillMaxWidth(0.85f),
             shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = BackgroundElevated
-            ),
+            colors = CardDefaults.cardColors(containerColor = BackgroundElevated),
             elevation = CardDefaults.cardElevation(defaultElevation = 12.dp)
         ) {
             Column(
@@ -846,9 +921,9 @@ private fun TaskCardOverlay(
                         fontWeight = FontWeight.Bold
                     )
                 }
-                
+
                 Spacer(modifier = Modifier.height(20.dp))
-                
+
                 // Players involved
                 Text(
                     text = "【${taskInfo.executorName}】→【${taskInfo.targetName}】",
@@ -856,9 +931,9 @@ private fun TaskCardOverlay(
                     color = Gold,
                     fontWeight = FontWeight.Bold
                 )
-                
+
                 Spacer(modifier = Modifier.height(16.dp))
-                
+
                 // Task description
                 Text(
                     text = taskInfo.task.description,
@@ -867,24 +942,21 @@ private fun TaskCardOverlay(
                     textAlign = TextAlign.Center,
                     lineHeight = 28.sp
                 )
-                
+
                 Spacer(modifier = Modifier.height(24.dp))
-                
+
                 // Action buttons
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    // Reject button
                     Button(
                         onClick = onReject,
                         modifier = Modifier
                             .weight(1f)
                             .height(52.dp),
                         shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = ButtonDanger
-                        )
+                        colors = ButtonDefaults.buttonColors(containerColor = ButtonDanger)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
@@ -892,13 +964,9 @@ private fun TaskCardOverlay(
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "拒绝",
-                            fontWeight = FontWeight.Bold
-                        )
+                        Text(text = "拒绝", fontWeight = FontWeight.Bold)
                     }
-                    
-                    // Accept button
+
                     Button(
                         onClick = onAccept,
                         modifier = Modifier
@@ -916,14 +984,10 @@ private fun TaskCardOverlay(
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "接受",
-                            fontWeight = FontWeight.Bold
-                        )
+                        Text(text = "接受", fontWeight = FontWeight.Bold)
                     }
                 }
-                
-                // Warning text
+
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
                     text = "拒绝将后退 1-3 步",
@@ -934,6 +998,76 @@ private fun TaskCardOverlay(
         }
     }
 }
+
+// ============================================================
+// Cell Preview Overlay — tapping any cell shows its task
+// ============================================================
+
+@Composable
+private fun CellPreviewOverlay(
+    task: Task,
+    onDismiss: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.5f))
+            .clickable(onClick = onDismiss),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            modifier = Modifier.fillMaxWidth(0.75f),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = BackgroundElevated),
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Box(
+                    modifier = Modifier
+                        .background(
+                            color = LevelColors.getOrElse(task.level.levelInt - 1) { Gold },
+                            shape = RoundedCornerShape(6.dp)
+                        )
+                        .padding(horizontal = 12.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = task.level.displayName,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = SoftWhite,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = task.description,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = SoftWhite,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 24.sp
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = "点击任意处关闭",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextSecondary
+                )
+            }
+        }
+    }
+}
+
+// ============================================================
+// Game Over Overlay
+// ============================================================
 
 @Composable
 private fun GameOverOverlay(
@@ -963,16 +1097,16 @@ private fun GameOverOverlay(
                     text = "🎉",
                     style = MaterialTheme.typography.displayLarge
                 )
-                
+
                 Spacer(modifier = Modifier.height(16.dp))
-                
+
                 Text(
                     text = "游戏结束",
                     style = MaterialTheme.typography.headlineMedium,
                     color = Gold,
                     fontWeight = FontWeight.Bold
                 )
-                
+
                 if (winner != null) {
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
@@ -982,9 +1116,9 @@ private fun GameOverOverlay(
                         fontWeight = FontWeight.Bold
                     )
                 }
-                
+
                 Spacer(modifier = Modifier.height(24.dp))
-                
+
                 Button(
                     onClick = onDismiss,
                     modifier = Modifier
@@ -996,15 +1130,16 @@ private fun GameOverOverlay(
                         contentColor = PureBlack
                     )
                 ) {
-                    Text(
-                        text = "返回首页",
-                        fontWeight = FontWeight.Bold
-                    )
+                    Text(text = "返回首页", fontWeight = FontWeight.Bold)
                 }
             }
         }
     }
 }
+
+// ============================================================
+// Loading & Error
+// ============================================================
 
 @Composable
 private fun LoadingIndicator() {
@@ -1022,16 +1157,16 @@ private fun LoadingIndicator() {
                 ),
                 label = "angle"
             )
-            
+
             Box(
                 modifier = Modifier
                     .size(48.dp)
                     .rotate(angle)
                     .border(4.dp, Gold, CircleShape)
             )
-            
+
             Spacer(modifier = Modifier.height(16.dp))
-            
+
             Text(
                 text = "加载中...",
                 color = TextSecondary
@@ -1057,18 +1192,18 @@ private fun ErrorDisplay(
                 text = "❌",
                 style = MaterialTheme.typography.displayMedium
             )
-            
+
             Spacer(modifier = Modifier.height(16.dp))
-            
+
             Text(
                 text = error,
                 style = MaterialTheme.typography.bodyLarge,
                 color = ButtonDanger,
                 textAlign = TextAlign.Center
             )
-            
+
             Spacer(modifier = Modifier.height(24.dp))
-            
+
             Button(
                 onClick = onRetry,
                 colors = ButtonDefaults.buttonColors(containerColor = Gold)

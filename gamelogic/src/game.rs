@@ -259,27 +259,18 @@ impl GameSession {
     }
 }
 
-/// Generate a board with the specified size and task ratio.
-fn generate_board(size: i32, task_ratio: f32, rng: &mut StdRng) -> Vec<BoardCell> {
+/// Generate a board where every internal cell is a Task cell.
+/// Only the first cell (Start) and last cell (Finish) are special.
+fn generate_board(size: i32, _task_ratio: f32, _rng: &mut StdRng) -> Vec<BoardCell> {
     let size = size as usize;
-    let task_count = ((size - 2) as f32 * task_ratio).round() as usize;
-
-    // Indices 1..(size-1) are candidates for task cells (exclude start and finish)
-    let mut indices: Vec<usize> = (1..size - 1).collect();
-    indices.shuffle(rng);
-    let task_indices: std::collections::HashSet<usize> =
-        indices.into_iter().take(task_count).collect();
-
     (0..size)
         .map(|i| {
             let cell_type = if i == 0 {
                 CellType::Start
             } else if i == size - 1 {
                 CellType::Finish
-            } else if task_indices.contains(&i) {
-                CellType::Task
             } else {
-                CellType::Normal
+                CellType::Task
             };
             BoardCell {
                 index: i as i32,
@@ -329,12 +320,17 @@ mod tests {
         assert_eq!(board[0].cell_type, CellType::Start);
         assert_eq!(board[35].cell_type, CellType::Finish);
 
-        let task_count = board
-            .iter()
-            .filter(|c| c.cell_type == CellType::Task)
-            .count();
-        // ~25% of 34 internal cells = ~8-9 tasks
-        assert!(task_count >= 7 && task_count <= 10);
+        // All internal cells (1..34) should be Task
+        for cell in &board[1..35] {
+            assert_eq!(cell.cell_type, CellType::Task);
+        }
+        assert_eq!(
+            board
+                .iter()
+                .filter(|c| c.cell_type == CellType::Task)
+                .count(),
+            34
+        );
     }
 
     #[test]

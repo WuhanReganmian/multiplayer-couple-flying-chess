@@ -39,6 +39,17 @@ object GameStateHolder {
     }
     
     /**
+     * 从存档快照恢复游戏数据（继续游戏时调用）
+     * SavedGameSnapshot 的 tasks key 是 "L1"…"L5" 字符串，需转回 TaskLevel。
+     */
+    fun setGameDataFromSnapshot(snapshot: SavedGameSnapshot) {
+        val levelMap = snapshot.tasks.mapKeys { (key, _) ->
+            TaskLevel.entries.first { it.name == key }
+        }
+        setGameData(snapshot.players, levelMap)
+    }
+
+    /**
      * 清除游戏数据（游戏结束或返回时调用）
      */
     fun clear() {
