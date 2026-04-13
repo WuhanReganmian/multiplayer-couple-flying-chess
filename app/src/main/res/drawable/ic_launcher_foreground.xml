@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Dice icon - couple chess game -->
+    <!-- Background circle -->
+    <path
+        android:fillColor="#D4AF37"
+        android:pathData="M54,54m-30,0a30,30 0,1 1,60 0a30,30 0,1 1,-60 0" />
+    <!-- Dice body -->
+    <path
+        android:fillColor="#2D1B3D"
+        android:pathData="M38,38h32v32h-32z" />
+    <!-- Dice dots - showing 5 -->
+    <path
+        android:fillColor="#D4AF37"
+        android:pathData="M44,44m-2.5,0a2.5,2.5 0,1 1,5 0a2.5,2.5 0,1 1,-5 0" />
+    <path
+        android:fillColor="#D4AF37"
+        android:pathData="M64,44m-2.5,0a2.5,2.5 0,1 1,5 0a2.5,2.5 0,1 1,-5 0" />
+    <path
+        android:fillColor="#D4AF37"
+        android:pathData="M54,54m-2.5,0a2.5,2.5 0,1 1,5 0a2.5,2.5 0,1 1,-5 0" />
+    <path
+        android:fillColor="#D4AF37"
+        android:pathData="M44,64m-2.5,0a2.5,2.5 0,1 1,5 0a2.5,2.5 0,1 1,-5 0" />
+    <path
+        android:fillColor="#D4AF37"
+        android:pathData="M64,64m-2.5,0a2.5,2.5 0,1 1,5 0a2.5,2.5 0,1 1,-5 0" />
+</vector>
