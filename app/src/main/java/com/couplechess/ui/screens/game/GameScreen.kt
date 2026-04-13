@@ -82,6 +82,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.couplechess.data.GameSaveManager
+import com.couplechess.data.GameStateHolder
 import com.couplechess.data.model.BoardCell
 import com.couplechess.data.model.CellType
 import com.couplechess.data.model.Gender
