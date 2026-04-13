@@ -1,5 +1,6 @@
 package com.couplechess.data
 
+import com.couplechess.data.model.GameState
 import com.couplechess.data.model.Player
 import com.couplechess.data.model.Task
 import com.couplechess.data.model.TaskLevel
@@ -28,13 +29,18 @@ object GameStateHolder {
     
     private val _isReady = MutableStateFlow(false)
     val isReady: StateFlow<Boolean> = _isReady.asStateFlow()
+
+    /** 存档中的游戏状态（仅"继续游戏"时非 null） */
+    private val _savedGameState = MutableStateFlow<GameState?>(null)
+    val savedGameState: StateFlow<GameState?> = _savedGameState.asStateFlow()
     
     /**
-     * 设置游戏数据（从 PlayerSetupScreen 调用）
+     * 设置游戏数据（从 PlayerSetupScreen 调用，新游戏）
      */
     fun setGameData(players: List<Player>, tasks: Map<TaskLevel, List<Task>>) {
         _players.value = players
         _tasks.value = tasks
+        _savedGameState.value = null
         _isReady.value = true
     }
     
@@ -46,7 +52,10 @@ object GameStateHolder {
         val levelMap = snapshot.tasks.mapKeys { (key, _) ->
             TaskLevel.entries.first { it.name == key }
         }
-        setGameData(snapshot.players, levelMap)
+        _players.value = snapshot.players
+        _tasks.value = levelMap
+        _savedGameState.value = snapshot.gameState
+        _isReady.value = true
     }
 
     /**
@@ -55,6 +64,7 @@ object GameStateHolder {
     fun clear() {
         _players.value = emptyList()
         _tasks.value = emptyMap()
+        _savedGameState.value = null
         _isReady.value = false
     }
     

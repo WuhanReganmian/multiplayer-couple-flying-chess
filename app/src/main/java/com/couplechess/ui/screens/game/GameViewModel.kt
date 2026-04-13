@@ -145,8 +145,8 @@ class GameViewModel : ViewModel() {
                 // Generate initial board — all internal cells are TASK
                 val initialBoard = generateInitialBoard(36)
 
-                // Assign a random task to each TASK cell
-                cellTasks = assignTasksToCells(initialBoard, tasks)
+                // Assign a random task to each TASK cell (filtered by player levels)
+                cellTasks = assignTasksToCells(initialBoard, tasks, players)
 
                 val initialState = GameState(
                     players = players,
@@ -210,8 +210,8 @@ class GameViewModel : ViewModel() {
                     gameHandle = handle
                 }
 
-                // Assign tasks to cells from saved board
-                cellTasks = assignTasksToCells(savedState.board, tasks)
+                // Assign tasks to cells from saved board (filtered by player levels)
+                cellTasks = assignTasksToCells(savedState.board, tasks, players)
 
                 _uiState.update {
                     it.copy(
@@ -318,46 +318,21 @@ class GameViewModel : ViewModel() {
     }
 
     /**
-     * Reject the current task (will cause retreat).
+     * Reject the current task — dismiss then re-show the same task.
+     * Player must accept to continue; no retreat, no turn change.
      */
     fun rejectTask() {
         viewModelScope.launch {
+            // Dismiss animation
             _uiState.update { it.copy(taskCardState = TaskCardState.Dismissing) }
+            delay(400)
+
+            // Brief hidden pause before re-showing
+            _uiState.update { it.copy(taskCardState = TaskCardState.Hidden) }
             delay(300)
 
-            val result = dispatchAction(GameAction.RejectTask)
-
-            if (result != null) {
-                // Find retreat event and animate
-                val retreatEvent = result.events
-                    .filterIsInstance<GameEvent.PlayerRetreated>()
-                    .firstOrNull()
-
-                if (retreatEvent != null) {
-                    _uiState.update {
-                        it.copy(
-                            movingPiece = MovingPieceState(
-                                playerId = retreatEvent.playerId,
-                                fromPosition = retreatEvent.from,
-                                toPosition = retreatEvent.to
-                            )
-                        )
-                    }
-
-                    // Animate retreat
-                    animateProgress(500)
-                }
-
-                _uiState.update {
-                    it.copy(
-                        gameState = result.state,
-                        taskCardState = TaskCardState.Hidden,
-                        currentTask = null,
-                        movingPiece = null
-                    )
-                }
-                autoSave()
-            }
+            // Re-show the same task (currentTask is unchanged)
+            _uiState.update { it.copy(taskCardState = TaskCardState.Showing) }
         }
     }
 
@@ -472,19 +447,24 @@ class GameViewModel : ViewModel() {
     }
 
     /**
-     * Assign a random task to each TASK cell based on available tasks.
+     * Assign a random task to each TASK cell, filtered by the players' chosen levels.
+     * Only tasks from levels that at least one player has selected are included.
      */
     private fun assignTasksToCells(
         board: List<BoardCell>,
-        tasks: Map<TaskLevel, List<Task>>
+        tasks: Map<TaskLevel, List<Task>>,
+        players: List<Player>
     ): Map<Int, Task> {
-        val allTasks = tasks.values.flatten()
-        if (allTasks.isEmpty()) return emptyMap()
+        val activeLevels = players.map { it.currentLevel }.toSet()
+        val filteredTasks = tasks.filterKeys { it in activeLevels }.values.flatten()
+        // Fallback to all tasks if no match (shouldn't happen normally)
+        val pool = filteredTasks.ifEmpty { tasks.values.flatten() }
+        if (pool.isEmpty()) return emptyMap()
 
         val result = mutableMapOf<Int, Task>()
         board.forEach { cell ->
             if (cell.cellType == CellType.TASK) {
-                result[cell.index] = allTasks.random()
+                result[cell.index] = pool.random()
             }
         }
         return result

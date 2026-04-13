@@ -125,10 +125,15 @@ fun GameScreen(
         viewModel.setSaveManager(gameSaveManager)
     }
 
-    // Initialize game when screen launches
+    // Initialize or restore game when screen launches
     LaunchedEffect(players) {
         if (players.isNotEmpty()) {
-            viewModel.initializeGame(players, tasks)
+            val savedState = GameStateHolder.savedGameState.value
+            if (savedState != null) {
+                viewModel.restoreGame(players, tasks, savedState)
+            } else {
+                viewModel.initializeGame(players, tasks)
+            }
         }
     }
 
@@ -981,16 +986,21 @@ private fun TaskCardOverlay(
                         Icon(
                             imageVector = Icons.Default.Done,
                             contentDescription = null,
+                            tint = PureBlack,
                             modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text(text = "接受", fontWeight = FontWeight.Bold)
+                        Text(
+                            text = "接受",
+                            fontWeight = FontWeight.Bold,
+                            color = PureBlack
+                        )
                     }
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    text = "拒绝将后退 1-3 步",
+                    text = "你必须接受任务才能继续游戏",
                     style = MaterialTheme.typography.labelSmall,
                     color = TextSecondary
                 )
