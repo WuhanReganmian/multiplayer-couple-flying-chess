@@ -1,0 +1,29 @@
+[package]
+name = "couple_chess"
+version = "0.1.0"
+edition = "2021"
+authors = ["Couple Chess Team"]
+description = "Game logic library for Multiplayer Couple Flying Chess"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib"]
+name = "couple_chess"
+
+[dependencies]
+# JNI bindings
+jni = { version = "0.21", default-features = false }
+
+# Serialization - must match Kotlin's kotlinx.serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Random number generation
+rand = "0.8"
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = "z"
+strip = true
+panic = "abort"
