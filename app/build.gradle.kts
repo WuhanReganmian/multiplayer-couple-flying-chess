@@ -10,12 +10,20 @@ android {
     namespace = "com.couplechess"
     compileSdk = 34
 
+    // Version can be overridden via CI: -PappVersionName=0.0.5 -PappVersionCode=5
+    val appVersionName: String by project.extra {
+        project.findProperty("appVersionName")?.toString() ?: "0.0.1"
+    }
+    val appVersionCode: String by project.extra {
+        project.findProperty("appVersionCode")?.toString() ?: "1"
+    }
+
     defaultConfig {
         applicationId = "com.couplechess"
         minSdk = 21
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.0.1"
+        versionCode = appVersionCode.toInt()
+        versionName = appVersionName
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -24,9 +32,16 @@ android {
         }
     }
 
+    signingConfigs {
+        getByName("debug") {
+            // Uses default debug keystore at ~/.android/debug.keystore
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
+            signingConfig = signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

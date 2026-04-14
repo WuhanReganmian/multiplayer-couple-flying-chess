@@ -95,11 +95,28 @@ jobs:
           -o ../app/src/main/jniLibs \
           build --release
 
+    - name: Generate debug keystore
+      run: |
+        mkdir -p ~/.android
+        if [ ! -f ~/.android/debug.keystore ]; then
+          keytool -genkey -v \
+            -keystore ~/.android/debug.keystore \
+            -storepass android -keypass android \
+            -alias androiddebugkey \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
+        fi
+
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
     - name: Build release APK
-      run: ./gradlew assembleRelease --stacktrace
+      run: |
+        VERSION="${{ steps.version.outputs.version }}"
+        PATCH=$(echo "$VERSION" | sed 's/0\.0\.//')
+        ./gradlew assembleRelease --stacktrace \
+          -PappVersionName="$VERSION" \
+          -PappVersionCode="$PATCH"
 
     - name: Run Kotlin unit tests
       run: ./gradlew test --stacktrace
@@ -107,7 +124,7 @@ jobs:
     - name: Rename APK with version
       run: |
         VERSION="${{ steps.version.outputs.version }}"
-        cp app/build/outputs/apk/release/app-release-unsigned.apk \
+        cp app/build/outputs/apk/release/app-release.apk \
            app/build/outputs/apk/release/couple-chess-v${VERSION}-arm64-v8a-release.apk
 
     - name: Upload APK artifact
