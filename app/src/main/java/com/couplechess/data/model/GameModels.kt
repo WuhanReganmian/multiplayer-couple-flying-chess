@@ -176,6 +176,15 @@ data class ActionResult(
     val events: List<GameEvent>
 )
 
+// ===== 游戏恢复状态（继续游戏时传给 Rust）=====
+
+@Serializable
+data class RestoreState(
+    @SerialName("current_player_index") val currentPlayerIndex: Int,
+    @SerialName("turn_count") val turnCount: Int = 0,
+    val board: List<BoardCell> = emptyList()
+)
+
 // ===== 游戏配置（传给 Rust createGame）=====
 
 @Serializable
@@ -184,7 +193,8 @@ data class GameConfig(
     @SerialName("board_size") val boardSize: Int = 36,
     @SerialName("task_ratio") val taskRatio: Float = 0.25f,
     val seed: Long = System.currentTimeMillis(),
-    val tasks: Map<String, List<Task>> = emptyMap()  // level -> tasks
+    val tasks: Map<String, List<Task>> = emptyMap(),  // level -> tasks
+    @SerialName("restore_state") val restoreState: RestoreState? = null
 )
 
 // ===== 玩家创建表单（UI 用）=====

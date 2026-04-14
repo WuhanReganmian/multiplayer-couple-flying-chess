@@ -196,6 +196,21 @@ pub struct GameConfig {
     pub seed: i64,
     #[serde(default)]
     pub tasks: std::collections::HashMap<String, Vec<Task>>,
+    /// When restoring a saved game, this contains the saved state to resume from.
+    /// If present, player positions, current_player_index, turn_count, and phase
+    /// are restored instead of being initialized from scratch.
+    #[serde(default)]
+    pub restore_state: Option<SavedState>,
+}
+
+/// Minimal saved state for game restoration (Kotlin → Rust).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SavedState {
+    pub current_player_index: i32,
+    #[serde(default)]
+    pub turn_count: i32,
+    #[serde(default)]
+    pub board: Vec<BoardCell>,
 }
 
 fn default_board_size() -> i32 {

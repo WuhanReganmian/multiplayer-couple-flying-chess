@@ -192,13 +192,19 @@ class GameViewModel : ViewModel() {
             _uiState.update { it.copy(isLoading = true, error = null) }
 
             try {
-                // Re-create Rust session for continued play
+                // Re-create Rust session with saved state to preserve player positions
+                val restoreState = RestoreState(
+                    currentPlayerIndex = savedState.currentPlayerIndex,
+                    turnCount = savedState.turnCount,
+                    board = savedState.board
+                )
                 val config = GameConfig(
                     players = players,
                     boardSize = savedState.board.size,
                     taskRatio = 0.25f,
                     seed = System.currentTimeMillis(),
-                    tasks = tasks.mapKeys { it.key.name }
+                    tasks = tasks.mapKeys { it.key.name },
+                    restoreState = restoreState
                 )
 
                 val configJson = json.encodeToString(config)

@@ -29,6 +29,10 @@ struct PendingTask {
 
 impl GameSession {
     /// Create a new game session from configuration.
+    ///
+    /// If `config.restore_state` is `Some`, player positions are preserved and
+    /// the board / turn counter / current player index are restored from the
+    /// saved state instead of being initialized from scratch.
     pub fn new(config: GameConfig) -> Self {
         let seed = if config.seed == 0 {
             rand::thread_rng().gen()
@@ -37,25 +41,44 @@ impl GameSession {
         };
         let mut rng = StdRng::seed_from_u64(seed);
 
-        let board = generate_board(config.board_size, config.task_ratio, &mut rng);
+        let is_restore = config.restore_state.is_some();
 
-        // Initialize players at position 0 (start)
-        let players: Vec<Player> = config
-            .players
-            .into_iter()
-            .map(|mut p| {
-                p.position = 0;
-                p.finished = false;
-                p
-            })
-            .collect();
+        let (board, current_player_index, turn_count) =
+            if let Some(ref saved) = config.restore_state {
+                // Restore: use saved board, player index, and turn count
+                (
+                    saved.board.clone(),
+                    saved.current_player_index,
+                    saved.turn_count,
+                )
+            } else {
+                // New game: generate fresh board
+                let board = generate_board(config.board_size, config.task_ratio, &mut rng);
+                (board, 0, 0)
+            };
+
+        let players: Vec<Player> = if is_restore {
+            // Restore: keep player positions and finished flags from config
+            config.players
+        } else {
+            // New game: initialize all players at position 0
+            config
+                .players
+                .into_iter()
+                .map(|mut p| {
+                    p.position = 0;
+                    p.finished = false;
+                    p
+                })
+                .collect()
+        };
 
         let state = GameState {
             players,
             board,
-            current_player_index: 0,
+            current_player_index,
             phase: GamePhase::WaitingForRoll,
-            turn_count: 0,
+            turn_count,
         };
 
         Self {
@@ -308,6 +331,7 @@ mod tests {
             task_ratio: 0.25,
             seed: 12345,
             tasks: HashMap::new(),
+            restore_state: None,
         }
     }
 

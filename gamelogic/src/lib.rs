@@ -192,6 +192,7 @@ mod tests {
             task_ratio: 0.25,
             seed: 42,
             tasks: HashMap::new(),
+            restore_state: None,
         };
 
         // Create session
@@ -225,6 +226,7 @@ mod tests {
             task_ratio: 0.3,
             seed: 123,
             tasks: HashMap::new(),
+            restore_state: None,
         };
 
         // Serialize and deserialize
