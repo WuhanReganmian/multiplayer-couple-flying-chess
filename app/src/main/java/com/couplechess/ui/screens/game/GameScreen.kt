@@ -932,7 +932,7 @@ private fun TaskCardOverlay(
 
                 // Players involved
                 Text(
-                    text = "【${taskInfo.executorName}】→【${taskInfo.targetName}】",
+                    text = "【${taskInfo.executorName}】对【${taskInfo.targetName}】执行惩罚",
                     style = MaterialTheme.typography.titleMedium,
                     color = Gold,
                     fontWeight = FontWeight.Bold

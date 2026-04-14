@@ -52,7 +52,9 @@ object GameStateHolder {
         val levelMap = snapshot.tasks.mapKeys { (key, _) ->
             TaskLevel.entries.first { it.name == key }
         }
-        _players.value = snapshot.players
+        // Use players from gameState (with correct positions) rather than
+        // snapshot.players which may have stale position=0
+        _players.value = snapshot.gameState.players
         _tasks.value = levelMap
         _savedGameState.value = snapshot.gameState
         _isReady.value = true

@@ -198,8 +198,10 @@ class GameViewModel : ViewModel() {
                     turnCount = savedState.turnCount,
                     board = savedState.board
                 )
+                // Use players from savedState (with correct positions) instead of
+                // GameStateHolder's players (which always have position=0)
                 val config = GameConfig(
-                    players = players,
+                    players = savedState.players,
                     boardSize = savedState.board.size,
                     taskRatio = 0.25f,
                     seed = System.currentTimeMillis(),
@@ -457,13 +459,15 @@ class GameViewModel : ViewModel() {
                 ?.find { it.id == event.executorId }?.position
             val displayTask = playerPosition?.let { cellTasks[it] } ?: event.task
 
+            // Punishment direction: the "target" (other player) punishes the
+            // "executor" (player who landed on the task cell)
             _uiState.update {
                 it.copy(
                     taskCardState = TaskCardState.Showing,
                     currentTask = TaskDisplayInfo(
                         task = displayTask,
-                        executorName = executor.name,
-                        targetName = target.name
+                        executorName = target.name,
+                        targetName = executor.name
                     )
                 )
             }
@@ -522,7 +526,9 @@ class GameViewModel : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             val snapshot = SavedGameSnapshot(
                 gameState = state,
-                players = players,
+                // Use players from current game state (with correct positions)
+                // instead of ViewModel's this.players which never updates positions
+                players = state.players,
                 tasks = tasksByLevel.mapKeys { it.key.name }
             )
             manager.save(snapshot)
