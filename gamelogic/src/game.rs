@@ -204,7 +204,7 @@ impl GameSession {
         }
 
         // Retreat 1-3 steps randomly
-        let retreat_steps = self.rng.gen_range(1..=3);
+        let retreat_steps = self.rng.gen_range(1..=5);
         events.push(GameEvent::TaskRejected { retreat_steps });
 
         let player_idx = self.state.current_player_index as usize;

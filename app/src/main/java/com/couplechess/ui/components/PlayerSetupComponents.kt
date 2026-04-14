@@ -244,15 +244,13 @@ fun PlayerCard(
     playerForm: PlayerForm,
     onNameChange: (String) -> Unit,
     onGenderChange: (Gender) -> Unit,
-    onLevelChange: (TaskLevel) -> Unit,
     onRemove: (() -> Unit)?,
     modifier: Modifier = Modifier
 ) {
-    val levelIndex = TaskLevel.entries.indexOf(playerForm.currentLevel)
     val cardGradient = Brush.verticalGradient(
         colors = listOf(
             BackgroundCard,
-            LevelColors.getOrElse(levelIndex) { BackgroundCard }.copy(alpha = 0.3f)
+            BackgroundCard.copy(alpha = 0.3f)
         )
     )
     
@@ -323,13 +321,7 @@ fun PlayerCard(
                     )
                 }
                 
-                Spacer(modifier = Modifier.height(20.dp))
-                
-                // 等级选择
-                LevelSlider(
-                    currentLevel = playerForm.currentLevel,
-                    onLevelChange = onLevelChange
-                )
+                // 等级选择已移至全局设置
             }
         }
     }

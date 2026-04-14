@@ -18,6 +18,7 @@ data class PlayerSetupState(
         PlayerForm(name = "玩家1", gender = Gender.MALE, currentLevel = TaskLevel.L1),
         PlayerForm(name = "玩家2", gender = Gender.FEMALE, currentLevel = TaskLevel.L1)
     ),
+    val globalLevel: TaskLevel = TaskLevel.L1,
     val validationError: String? = null,
     val isValid: Boolean = true
 ) {
@@ -73,16 +74,11 @@ class PlayerSetupViewModel : ViewModel() {
     }
     
     /**
-     * 更新玩家当前阶段
+     * 更新全局阶段等级（统一设置，不再单独设置每个玩家）
      */
-    fun updatePlayerLevel(index: Int, level: TaskLevel) {
+    fun updateGlobalLevel(level: TaskLevel) {
         _state.update { currentState ->
-            val updatedForms = currentState.playerForms.toMutableList().apply {
-                if (index in indices) {
-                    this[index] = this[index].copy(currentLevel = level)
-                }
-            }
-            currentState.copy(playerForms = updatedForms)
+            currentState.copy(globalLevel = level)
         }
     }
     
@@ -143,7 +139,7 @@ class PlayerSetupViewModel : ViewModel() {
                 id = index,
                 name = form.name.ifBlank { "玩家${index + 1}" },
                 gender = form.gender,
-                currentLevel = form.currentLevel,
+                currentLevel = _state.value.globalLevel,
                 position = 0,
                 finished = false
             )

@@ -318,21 +318,51 @@ class GameViewModel : ViewModel() {
     }
 
     /**
-     * Reject the current task — dismiss then re-show the same task.
-     * Player must accept to continue; no retreat, no turn change.
+     * Reject the current task — retreat 1-5 steps (Rust decides), then
+     * execute the task on the new cell (if it is a TASK cell).
      */
     fun rejectTask() {
         viewModelScope.launch {
-            // Dismiss animation
+            // Dismiss current task card
             _uiState.update { it.copy(taskCardState = TaskCardState.Dismissing) }
             delay(400)
+            _uiState.update {
+                it.copy(taskCardState = TaskCardState.Hidden, currentTask = null)
+            }
 
-            // Brief hidden pause before re-showing
-            _uiState.update { it.copy(taskCardState = TaskCardState.Hidden) }
-            delay(300)
+            // Ask Rust to handle the rejection (retreat + possible new task)
+            val result = dispatchAction(GameAction.RejectTask) ?: return@launch
 
-            // Re-show the same task (currentTask is unchanged)
-            _uiState.update { it.copy(taskCardState = TaskCardState.Showing) }
+            // Update game state with Rust result
+            _uiState.update { it.copy(gameState = result.state) }
+
+            // Animate the retreat movement
+            val retreatEvent = result.events
+                .filterIsInstance<GameEvent.PlayerRetreated>()
+                .firstOrNull()
+
+            if (retreatEvent != null) {
+                // Reuse movement animation for the retreat
+                animateMovement(
+                    GameEvent.PlayerMoved(
+                        playerId = retreatEvent.playerId,
+                        from = retreatEvent.from,
+                        to = retreatEvent.to
+                    )
+                )
+            }
+
+            // Check if Rust triggered a new task at the retreat position
+            val newTaskEvent = result.events
+                .filterIsInstance<GameEvent.TaskTriggered>()
+                .firstOrNull()
+
+            if (newTaskEvent != null) {
+                // Show the new task (showTaskCard already uses cellTasks)
+                showTaskCard(newTaskEvent)
+            }
+
+            autoSave()
         }
     }
 
@@ -415,11 +445,17 @@ class GameViewModel : ViewModel() {
         val target = players.find { it.id == event.targetId }
 
         if (executor != null && target != null) {
+            // Use the task assigned to this cell (Kotlin-side) so it matches
+            // what the board UI displays; fall back to the Rust event task.
+            val playerPosition = _uiState.value.gameState?.players
+                ?.find { it.id == event.executorId }?.position
+            val displayTask = playerPosition?.let { cellTasks[it] } ?: event.task
+
             _uiState.update {
                 it.copy(
                     taskCardState = TaskCardState.Showing,
                     currentTask = TaskDisplayInfo(
-                        task = event.task,
+                        task = displayTask,
                         executorName = executor.name,
                         targetName = target.name
                     )

@@ -51,6 +51,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.couplechess.data.model.Player
 import com.couplechess.data.repository.TaskRepository
 import com.couplechess.ui.components.AddPlayerButton
+import com.couplechess.ui.components.LevelSlider
 import com.couplechess.ui.components.PlayerCard
 import com.couplechess.ui.theme.BackgroundCard
 import com.couplechess.ui.theme.BackgroundElevated
@@ -150,6 +151,33 @@ fun PlayerSetupScreen(
                         InstructionCard()
                     }
                     
+                    // 全局阶段等级设置
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = BackgroundCard
+                            )
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp)
+                            ) {
+                                Text(
+                                    text = "阶段设置",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Gold
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                LevelSlider(
+                                    currentLevel = state.globalLevel,
+                                    onLevelChange = { viewModel.updateGlobalLevel(it) }
+                                )
+                            }
+                        }
+                    }
+                    
                     // 玩家卡片列表
                     itemsIndexed(
                         items = state.playerForms,
@@ -160,7 +188,6 @@ fun PlayerSetupScreen(
                             playerForm = playerForm,
                             onNameChange = { viewModel.updatePlayerName(index, it) },
                             onGenderChange = { viewModel.updatePlayerGender(index, it) },
-                            onLevelChange = { viewModel.updatePlayerLevel(index, it) },
                             onRemove = if (state.canRemovePlayer) {
                                 { viewModel.removePlayer(index) }
                             } else null,
@@ -222,7 +249,7 @@ private fun InstructionCard() {
             Text(
                 text = "• 支持 2-4 名玩家参与\n" +
                        "• 必须同时有男性和女性玩家\n" +
-                       "• 每位玩家可独立设置当前阶段 (L1-L5)\n" +
+                       "• 统一设置当前阶段 (L1-L5)\n" +
                        "• 任务仅在异性玩家间触发",
                 style = MaterialTheme.typography.bodySmall,
                 color = TextSecondary,
