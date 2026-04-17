@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.couplechess.data.GameSaveManager
 import com.couplechess.data.SavedGameSnapshot
 import com.couplechess.data.bridge.GameBridge
+import com.couplechess.data.bridge.GameEngine
+import com.couplechess.data.bridge.JvmGameEngine
 import com.couplechess.data.model.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -82,6 +84,14 @@ class GameViewModel : ViewModel() {
 
     // Rust game session handle
     private var gameHandle: Long = 0L
+
+    // Game engine abstraction — injectable for testing (P1-5)
+    private var gameEngine: GameEngine = JvmGameEngine
+
+    /** Inject a custom [GameEngine] (e.g., mock for testing). */
+    fun setGameEngine(engine: GameEngine) {
+        gameEngine = engine
+    }
 
     // Local copy of players for name lookup
     private var players: List<Player> = emptyList()
@@ -388,28 +398,38 @@ class GameViewModel : ViewModel() {
     /** Get the task assigned to a specific cell. */
     fun getTaskForCell(cellIndex: Int): Task? = cellTasks[cellIndex]
 
-    /**
-     * Dispatch an action to the Rust game engine.
-     */
-    private suspend fun dispatchAction(action: GameAction): ActionResult? {
-        if (gameHandle == 0L) return null
-
-        return try {
-            val actionJson = json.encodeToString(action)
-
-            val resultJson = withContext(Dispatchers.IO) {
-                GameBridge.dispatchAction(gameHandle, actionJson)
-            }
-
-            json.decodeFromString<ActionResult>(resultJson)
-        } catch (e: Exception) {
-            _uiState.update { it.copy(error = "Action failed: ${e.message}") }
-            null
-        }
+/**
+ * Dispatch an action to the Rust game engine.
+ * @return [ActionResult] on success, null on failure (error state updated in-place)
+ */
+private suspend fun dispatchAction(action: GameAction): ActionResult? {
+    if (gameHandle == 0L) {
+        _uiState.update { it.copy(error = "No active game session") }
+        return null
     }
 
-    /**
-     * Animate piece movement.
+    val actionJson = json.encodeToString(action)
+
+    return gameEngine
+        .dispatchAction(gameHandle, actionJson)
+        .fold(
+            onSuccess = { resultJson ->
+                try {
+                    json.decodeFromString<ActionResult>(resultJson)
+                } catch (e: Exception) {
+                    _uiState.update { it.copy(error = "Failed to decode result: ${e.message}") }
+                    null
+                }
+            },
+            onFailure = { e ->
+                _uiState.update { it.copy(error = "Action failed: ${e.message}") }
+                null
+            }
+        )
+}
+
+/**
+ * Animate piece movement.
      */
     private suspend fun animateMovement(event: GameEvent.PlayerMoved) {
         _uiState.update {
@@ -449,8 +469,8 @@ class GameViewModel : ViewModel() {
      * Show task card with fade-in animation.
      */
     private suspend fun showTaskCard(event: GameEvent.TaskTriggered) {
-        val executor = players.find { it.id == event.executorId }
-        val target = players.find { it.id == event.targetId }
+        val executor = _uiState.value.gameState?.players?.find { it.id == event.executorId }
+        val target = _uiState.value.gameState?.players?.find { it.id == event.targetId }
 
         if (executor != null && target != null) {
             // Use the task assigned to this cell (Kotlin-side) so it matches
@@ -538,7 +558,7 @@ class GameViewModel : ViewModel() {
     /**
      * Get player by ID.
      */
-    fun getPlayer(playerId: Int): Player? = players.find { it.id == playerId }
+    fun getPlayer(playerId: Int): Player? = _uiState.value.gameState?.players?.find { it.id == playerId }
 
     /**
      * Get current player.
@@ -561,7 +581,7 @@ class GameViewModel : ViewModel() {
     fun getWinner(): Player? {
         val phase = _uiState.value.gameState?.phase as? GamePhase.GameOver
             ?: return null
-        return players.find { it.id == phase.winner }
+        return _uiState.value.gameState?.players?.find { it.id == phase.winner }
     }
 
     /**

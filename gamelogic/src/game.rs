@@ -13,18 +13,13 @@ use std::collections::HashMap;
 
 /// Main game session holding all state.
 pub struct GameSession {
-    pub state: GameState,
+    // state is private — external callers must go through dispatch() to get results.
+    // Internal code can still read/write via &mut GameSession.
+    state: GameState,
     tasks: HashMap<String, Vec<Task>>,
     rng: StdRng,
-    pending_task: Option<PendingTask>,
-}
-
-/// Tracks the current pending task decision.
-#[derive(Debug, Clone)]
-struct PendingTask {
-    task: Task,
-    executor_id: i32,
-    target_id: i32,
+    // NOTE: Task state is tracked via state.phase (GamePhase::TaskTriggered).
+    // No separate pending_task field needed — avoids duplicating task data.
 }
 
 impl GameSession {
@@ -85,7 +80,6 @@ impl GameSession {
             state,
             tasks: config.tasks,
             rng,
-            pending_task: None,
         }
     }
 
@@ -182,12 +176,6 @@ impl GameSession {
             self.create_fallback_task(&executor.current_level)
         };
 
-        let pending = PendingTask {
-            task: task.clone(),
-            executor_id: executor.id,
-            target_id: target.id,
-        };
-
         events.push(GameEvent::TaskTriggered {
             task: task.clone(),
             executor_id: executor.id,
@@ -199,7 +187,6 @@ impl GameSession {
             executor: executor.id,
             target: target.id,
         };
-        self.pending_task = Some(pending);
     }
 
     fn create_fallback_task(&self, level: &TaskLevel) -> Task {
@@ -217,7 +204,6 @@ impl GameSession {
         }
 
         events.push(GameEvent::TaskAccepted);
-        self.pending_task = None;
         self.advance_turn(events);
     }
 
@@ -227,7 +213,7 @@ impl GameSession {
         }
 
         // Retreat 1-3 steps randomly
-        let retreat_steps = self.rng.gen_range(1..=5);
+        let retreat_steps = self.rng.gen_range(1..=3);
         events.push(GameEvent::TaskRejected { retreat_steps });
 
         let player_idx = self.state.current_player_index as usize;
@@ -241,8 +227,6 @@ impl GameSession {
             from,
             to,
         });
-
-        self.pending_task = None;
 
         // Check if new position is also a task cell
         let cell = &self.state.board[to as usize];
@@ -284,7 +268,7 @@ impl GameSession {
 
 /// Generate a board where every internal cell is a Task cell.
 /// Only the first cell (Start) and last cell (Finish) are special.
-fn generate_board(size: i32, _task_ratio: f32, _rng: &mut StdRng) -> Vec<BoardCell> {
+fn generate_board(size: i32, task_ratio: f32, rng: &mut StdRng) -> Vec<BoardCell> {
     let size = size as usize;
     (0..size)
         .map(|i| {
@@ -293,7 +277,12 @@ fn generate_board(size: i32, _task_ratio: f32, _rng: &mut StdRng) -> Vec<BoardCe
             } else if i == size - 1 {
                 CellType::Finish
             } else {
-                CellType::Task
+                // Use the provided task_ratio to decide between Task and Normal cells
+                if rng.gen_bool(task_ratio as f64) {
+                    CellType::Task
+                } else {
+                    CellType::Normal
+                }
             };
             BoardCell {
                 index: i as i32,
@@ -344,16 +333,26 @@ mod tests {
         assert_eq!(board[0].cell_type, CellType::Start);
         assert_eq!(board[35].cell_type, CellType::Finish);
 
-        // All internal cells (1..34) should be Task
-        for cell in &board[1..35] {
-            assert_eq!(cell.cell_type, CellType::Task);
-        }
-        assert_eq!(
-            board
-                .iter()
-                .filter(|c| c.cell_type == CellType::Task)
-                .count(),
-            34
+        // Internal cells should be a mix of Task and Normal according to task_ratio
+        let internal: Vec<&BoardCell> = board[1..35].iter().collect();
+        let task_count = internal
+            .iter()
+            .filter(|c| c.cell_type == CellType::Task)
+            .count();
+        let normal_count = internal
+            .iter()
+            .filter(|c| c.cell_type == CellType::Normal)
+            .count();
+        // Ensure counts sum to internal cells
+        assert_eq!(task_count + normal_count, internal.len());
+        // Expected number of Task cells based on ratio (0.25) with tolerance +/-2
+        let expected_tasks = ((36 - 2) as f32 * 0.25).round() as usize;
+        let tolerance = 2usize;
+        assert!(
+            (task_count as isize - expected_tasks as isize).abs() as usize <= tolerance,
+            "Task count {} not within tolerance of expected {}",
+            task_count,
+            expected_tasks
         );
     }
 
@@ -402,16 +401,6 @@ mod tests {
             target: 2,
         };
         session.state.players[0].position = 10;
-        session.pending_task = Some(PendingTask {
-            task: Task {
-                id: "test".to_string(),
-                level: TaskLevel::L1,
-                description: "Test task".to_string(),
-                is_custom: false,
-            },
-            executor_id: 1,
-            target_id: 2,
-        });
 
         let result = session.dispatch(GameAction::RejectTask);
 

@@ -11,8 +11,9 @@ pub enum Gender {
     Female,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum TaskLevel {
+    #[default]
     L1,
     L2,
     L3,
@@ -66,12 +67,6 @@ pub struct Player {
     pub finished: bool,
 }
 
-impl Default for TaskLevel {
-    fn default() -> Self {
-        TaskLevel::L1
-    }
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Task {
     pub id: String,
@@ -89,9 +84,10 @@ pub struct BoardCell {
 
 // ===== Game Phase (tagged enum for Kotlin sealed class) =====
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(tag = "type")]
 pub enum GamePhase {
+    #[default]
     WaitingForRoll,
     Moving {
         dice_value: i32,
@@ -108,12 +104,6 @@ pub enum GamePhase {
     GameOver {
         winner: i32,
     },
-}
-
-impl Default for GamePhase {
-    fn default() -> Self {
-        GamePhase::WaitingForRoll
-    }
 }
 
 // ===== Full Game State =====
@@ -172,6 +162,11 @@ pub enum GameEvent {
     },
     GameFinished {
         winner_id: i32,
+    },
+    /// Error event produced when a JNI-level error occurs.
+    /// Carried in [ActionResult.events] so Kotlin can parse it uniformly.
+    Error {
+        message: String,
     },
 }
 

@@ -239,10 +239,12 @@ fun GameScreen(
                 )
             }
 
-            // Game over overlay
-            if (viewModel.isGameOver()) {
-                viewModel.onGameOver()
-                GameOverOverlay(
+// Game over overlay
+if (viewModel.isGameOver()) {
+LaunchedEffect(Unit) {
+viewModel.onGameOver()
+}
+GameOverOverlay(
                     winner = viewModel.getWinner(),
                     onDismiss = onGameFinished
                 )

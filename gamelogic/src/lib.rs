@@ -9,14 +9,19 @@ mod game;
 mod models;
 
 pub use game::GameSession;
-pub use models::*;
+// Selective re-exports — only types crossing the JNI boundary need pub.
+// Internal types (SavedState, Gender, CellType, etc.) are crate-private.
+pub use models::{
+    ActionResult, GameAction, GameConfig, GameEvent, GamePhase, GameState, Player, Task, TaskLevel,
+};
 
 use jni::objects::{JClass, JString};
 use jni::sys::jlong;
 use jni::JNIEnv;
 
 /// Convert a Rust GameSession pointer to a JNI handle (jlong).
-fn session_to_handle(session: Box<GameSession>) -> jlong {
+/// Only used within this crate (createGame/dispatchAction and tests).
+pub(crate) fn session_to_handle(session: Box<GameSession>) -> jlong {
     Box::into_raw(session) as jlong
 }
 
@@ -25,7 +30,7 @@ fn session_to_handle(session: Box<GameSession>) -> jlong {
 /// # Safety
 /// - `handle` must be a valid pointer returned by `session_to_handle`.
 /// - The session must not have been destroyed.
-unsafe fn handle_to_session<'a>(handle: jlong) -> &'a mut GameSession {
+pub(crate) unsafe fn handle_to_session<'a>(handle: jlong) -> &'a mut GameSession {
     &mut *(handle as *mut GameSession)
 }
 
@@ -151,20 +156,40 @@ pub extern "system" fn Java_com_couplechess_data_bridge_GameBridge_destroyGame<'
 }
 
 /// Helper to create an error response JSON string.
+/// Uses `if let` chaining instead of `unwrap()` to avoid panicking in JNI boundary.
 fn error_response<'local>(env: &mut JNIEnv<'local>, message: &str) -> JString<'local> {
-    // Create a minimal error state to return
-    let error_json = format!(
-        r#"{{"state":{{"players":[],"board":[],"current_player_index":0,"phase":{{"type":"WaitingForRoll"}},"turn_count":0}},"events":[{{"type":"Error","message":"{}"}}]}}"#,
-        message.replace('"', "\\\"")
-    );
+    // Use the proper GameEvent::Error variant for consistency
+    let error_state = GameState {
+        players: Vec::new(),
+        board: Vec::new(),
+        current_player_index: 0,
+        phase: GamePhase::WaitingForRoll,
+        turn_count: 0,
+    };
+    let result = ActionResult {
+        state: error_state,
+        events: vec![GameEvent::Error {
+            message: message.to_string(),
+        }],
+    };
 
-    env.new_string(&error_json)
-        .unwrap_or_else(|_| JString::default())
+    // Serialize result to JSON string
+    let json = match serde_json::to_string(&result) {
+        Ok(j) => j,
+        Err(_) => return env.new_string("{}").unwrap_or_else(|_| JString::default()),
+    };
+
+    // Convert to Java string; fall back to "{}" if encoding fails
+    match env.new_string(&json) {
+        Ok(s) => s,
+        Err(_) => env.new_string("{}").unwrap_or_else(|_| JString::default()),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::Gender;
     use std::collections::HashMap;
 
     #[test]
